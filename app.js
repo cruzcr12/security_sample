@@ -10,7 +10,8 @@ const mongoose = require("mongoose");
 const session = require('express-session');
 const passport = require("passport");
 const passportLocalMongoose = require("passport-local-mongoose");
-
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const findOrCreate = require('mongoose-findorcreate');
 
 const app = express();
 
@@ -39,12 +40,15 @@ mongoose.connect("mongodb://localhost:27017/userDB", { useNewUrlParser: true });
 // Create a userSchema
 const userSchema = new mongoose.Schema({
     email: String,
-    password: String
+    password: String,
+    googleId: String
 });
 
 // 4. Plugin the userSchema to use the passportLocalMongoose to hash and 
 // salt the password and save the user in the MongoDB
 userSchema.plugin(passportLocalMongoose);
+// Plugin the findOrCreate to the user schema
+userSchema.plugin(findOrCreate);
 
 // Create a user model
 const User = new mongoose.model("User", userSchema);
@@ -53,8 +57,31 @@ const User = new mongoose.model("User", userSchema);
 // CHANGE: USE "createStrategy" INSTEAD OF "authenticate"
 passport.use(User.createStrategy());
 
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+// Replace the serialize and deserialize methods with the ones 
+// provided by passportjs
+passport.serializeUser(function(user, done) {
+    done(null, user.id);
+});
+
+passport.deserializeUser(function(id, done) {
+    User.findById(id, function(err, user) {
+        done(err, user);
+    });
+});
+
+passport.use(new GoogleStrategy({
+        clientID: process.env.CLIENT_ID,
+        clientSecret: process.env.CLIENT_SECRET,
+        callbackURL: "http://localhost:3000/auth/google/secrets",
+    },
+    function(accessToken, refreshToken, profile, cb) {
+        console.log(profile);
+        User.findOrCreate({ googleId: profile.id }, function(err, user) {
+            return cb(err, user);
+        });
+    }
+));
+
 
 /**
  * GET Home route
@@ -62,6 +89,26 @@ passport.deserializeUser(User.deserializeUser());
 app.get("/", function(req, res) {
     res.render("home");
 });
+
+/**
+ * GET Autho Google route to authenticate the user with OAut 2.0
+ */
+// app.get("/auth/google", function(req, res) {
+//     passport.authenticate("google", passport.authenticate('google', { scope: ['profile'] }));
+// });
+app.route('/auth/google')
+    .get(passport.authenticate('google', {
+        scope: ['profile']
+    }));
+
+/**
+ * GET Auth/Google/Secrets. This is the redirected path given by google when the user is authorized
+ */
+app.get("/auth/google/secrets", passport.authenticate('google', { failureRedirect: '/login' }),
+    function(req, res) {
+        // Successful authentication, redirect to secrets page.
+        res.redirect('/secrets');
+    });
 
 /**
  * GET Login route
