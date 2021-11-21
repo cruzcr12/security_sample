@@ -41,7 +41,8 @@ mongoose.connect("mongodb://localhost:27017/userDB", { useNewUrlParser: true });
 const userSchema = new mongoose.Schema({
     email: String,
     password: String,
-    googleId: String
+    googleId: String,
+    secret: String
 });
 
 // 4. Plugin the userSchema to use the passportLocalMongoose to hash and 
@@ -81,6 +82,8 @@ passport.use(new GoogleStrategy({
         });
     }
 ));
+
+
 
 
 /**
@@ -175,14 +178,53 @@ app.post("/register", function(req, res) {
  * GET Secrets route
  */
 app.get("/secrets", function(req, res) {
-    console.log("Validating the user in the secrets page");
+    // Select all the user which the secret field is not null
+    User.find({ "secret": { $ne: null } }, function(err, foundUsers) {
+        if (err) {
+            console.log(err);
+        } else {
+            if (foundUsers) {
+                res.render("secrets", { usersWithSecrets: foundUsers });
+            }
+        }
+    });
 
+
+});
+
+/**
+ * GET Submit. Shows the secret page
+ */
+app.get("/submit", function(req, res) {
     if (req.isAuthenticated()) {
-        res.render("secrets");
+        res.render("submit");
     } else {
         console.log("User not authenticated");
         res.redirect("/login");
     }
+});
+
+/**
+ * POST Submit. Submits the secret of the user
+ */
+app.post("/submit", function(req, res) {
+    const submittedSecret = req.body.secret;
+
+    console.log(req.user.id);
+
+    // Get the user
+    User.findById(req.user.id, function(err, foundUser) {
+        if (err) {
+            console.log(err);
+        } else {
+            if (foundUser) {
+                foundUser.secret = submittedSecret;
+                foundUser.save(function() {
+                    res.redirect("/secrets");
+                });
+            }
+        }
+    });
 });
 
 app.listen(3000, function() {
